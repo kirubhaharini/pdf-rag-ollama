@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF RAG</title>
+<style>
+:root {
+  --bg:      #0f1117;
+  --side:    #141820;
+  --card:    #1c2130;
+  --border:  #252d3d;
+  --accent:  #5b8def;
+  --accent2: #3d6fd4;
+  --text:    #dde3f0;
+  --muted:   #5a6482;
+  --danger:  #e05c6a;
+  --green:   #4caf82;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden; }
+
+/* ── Sidebar ───────────────────────────────────────────────────── */
+#sidebar {
+  width: 272px; min-width: 272px; background: var(--side);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+
+.s-head {
+  padding: 18px 16px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.s-head h1 { font-size: 15px; font-weight: 600; }
+.s-head p  { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* Ollama status bar */
+#ollama-bar {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.dot.ok  { background: var(--green); }
+.dot.err { background: var(--danger); }
+
+/* Model selector */
+#model-row {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+#model-row label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+#model-select {
+  flex: 1; background: var(--card); border: 1px solid var(--border);
+  color: var(--text); font-size: 12px; padding: 5px 8px;
+  border-radius: 6px; outline: none; cursor: pointer;
+}
+
+/* Drop zone */
+#drop-zone {
+  margin: 12px 12px 0;
+  border: 1.5px dashed var(--border); border-radius: 10px;
+  padding: 18px 10px; text-align: center; cursor: pointer;
+  font-size: 12px; color: var(--muted);
+  transition: border-color .2s, background .2s;
+}
+#drop-zone:hover, #drop-zone.over {
+  border-color: var(--accent); background: rgba(91,141,239,0.06); color: var(--accent);
+}
+#drop-zone .icon { font-size: 20px; margin-bottom: 5px; }
+#drop-zone input { display: none; }
+
+#upload-btn {
+  margin: 8px 12px 0; width: calc(100% - 24px);
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 8px; padding: 9px; font-size: 13px;
+  font-weight: 500; cursor: pointer; transition: background .15s;
+}
+#upload-btn:hover    { background: var(--accent2); }
+#upload-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Doc list */
+#doc-list { flex: 1; overflow-y: auto; padding: 10px 12px; }
+#doc-list::-webkit-scrollbar { width: 4px; }
+#doc-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.doc-item {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 10px;
+  margin-bottom: 7px; display: flex; align-items: flex-start;
+  gap: 9px; cursor: pointer; transition: border-color .15s; user-select: none;
+}
+.doc-item:hover  { border-color: #3a4460; }
+.doc-item.active { border-color: var(--accent); background: rgba(91,141,239,0.08); }
+
+.doc-check {
+  width: 16px; min-width: 16px; height: 16px; border-radius: 4px;
+  border: 1.5px solid var(--muted); margin-top: 1px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; transition: all .15s;
+}
+.doc-item.active .doc-check { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.doc-info  { flex: 1; min-width: 0; }
+.doc-name  { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-meta  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+.doc-del {
+  background: none; border: none; color: var(--muted);
+  font-size: 13px; cursor: pointer; padding: 0 2px;
+  transition: color .15s; line-height: 1;
+}
+.doc-del:hover { color: var(--danger); }
+.no-docs { font-size: 12px; color: var(--muted); text-align: center; padding: 18px 0; }
+
+/* ── Chat ──────────────────────────────────────────────────────── */
+#chat { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+#messages {
+  flex: 1; overflow-y: auto; padding: 24px 26px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+#messages::-webkit-scrollbar { width: 4px; }
+#messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--muted); gap: 10px; text-align: center;
+}
+.empty .big { font-size: 36px; }
+.empty p    { font-size: 13px; line-height: 1.6; }
+
+.msg { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+.msg.user { align-self: flex-end; align-items: flex-end; }
+.msg.ai   { align-self: flex-start; }
+
+.bubble {
+  padding: 11px 15px; border-radius: 14px;
+  font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word;
+}
+.msg.user .bubble { background: #1e2d4a; border-bottom-right-radius: 4px; }
+.msg.ai   .bubble { background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+
+.cursor { display: inline-block; width: 2px; height: 14px; background: var(--accent); margin-left: 2px; animation: blink .7s infinite; vertical-align: text-bottom; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+.sources { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  font-size: 11px; padding: 3px 9px; border-radius: 20px;
+  background: rgba(91,141,239,0.1); border: 1px solid rgba(91,141,239,0.25);
+  color: var(--accent); white-space: nowrap;
+}
+.msg-label { font-size: 11px; color: var(--muted); padding: 0 4px; }
+
+/* Input */
+#input-bar {
+  padding: 14px 26px 18px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 10px; align-items: flex-end;
+}
+#question {
+  flex: 1; background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 11px 15px;
+  color: var(--text); font-size: 14px; resize: none; outline: none;
+  font-family: inherit; line-height: 1.5; max-height: 140px;
+  transition: border-color .15s;
+}
+#question:focus { border-color: var(--accent); }
+#question::placeholder { color: var(--muted); }
+#send-btn {
+  background: var(--accent); border: none; border-radius: 10px;
+  width: 42px; height: 42px; cursor: pointer; color: #fff;
+  font-size: 18px; display: flex; align-items: center; justify-content: center;
+  transition: background .15s; flex-shrink: 0;
+}
+#send-btn:hover    { background: var(--accent2); }
+#send-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Toast */
+#toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(12px);
+  background: #221820; border: 1px solid var(--danger); color: #f08090;
+  padding: 9px 16px; border-radius: 8px; font-size: 13px;
+  opacity: 0; transition: opacity .22s, transform .22s; pointer-events: none; z-index: 99;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+.spin { display: inline-block; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="s-head">
+    <h1>PDF RAG</h1>
+    <p>Local AI · No API key needed</p>
+  </div>
+
+  <div id="ollama-bar">
+    <div class="dot" id="dot"></div>
+    <span id="ollama-status">Checking Ollama…</span>
+  </div>
+
+  <div id="model-row">
+    <label for="model-select">Model</label>
+    <select id="model-select"><option value="">— loading —</option></select>
+  </div>
+
+  <div id="drop-zone">
+    <div class="icon">📄</div>
+    <div>Drop PDFs here</div>
+    <input type="file" id="file-input" accept=".pdf" multiple>
+  </div>
+  <button id="upload-btn">+ Add PDFs</button>
+
+  <div id="doc-list">
+    <div class="no-docs" id="no-docs">No documents loaded</div>
+  </div>
+</div>
+
+<div id="chat">
+  <div id="messages">
+    <div class="empty" id="empty">
+      <div class="big">🔍</div>
+      <p>Upload PDFs on the left,<br>then ask anything about them.</p>
+    </div>
+  </div>
+  <div id="input-bar">
+    <textarea id="question" rows="1" placeholder="Ask a question…"></textarea>
+    <button id="send-btn">↑</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let docs      = {};
+let selected  = new Set();
+let streaming = false;
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ── Ollama health + model list ────────────────────────────────────────────────
+async function checkOllama() {
+  try {
+    const h = await fetch('/health').then(r => r.json());
+    const dot    = document.getElementById('dot');
+    const status = document.getElementById('ollama-status');
+    const sel    = document.getElementById('model-select');
+
+    if (h.ollama) {
+      dot.className    = 'dot ok';
+      status.textContent = 'Ollama connected';
+      sel.innerHTML = h.models.map(m => `<option value="${m}">${m}</option>`).join('');
+    } else {
+      dot.className    = 'dot err';
+      status.textContent = 'Ollama not running';
+      sel.innerHTML = '<option value="">— not found —</option>';
+    }
+  } catch {
+    document.getElementById('dot').className = 'dot err';
+    document.getElementById('ollama-status').textContent = 'Ollama not running';
+  }
+}
+checkOllama();
+
+// ── Render docs ───────────────────────────────────────────────────────────────
+function renderDocs() {
+  const list   = document.getElementById('doc-list');
+  const noDocs = document.getElementById('no-docs');
+  list.querySelectorAll('.doc-item').forEach(el => el.remove());
+  const entries = Object.values(docs);
+  noDocs.style.display = entries.length ? 'none' : '';
+
+  for (const doc of entries) {
+    const active = selected.has(doc.id);
+    const el = document.createElement('div');
+    el.className = 'doc-item' + (active ? ' active' : '');
+    el.dataset.id = doc.id;
+    el.innerHTML = `
+      <div class="doc-check">${active ? '✓' : ''}</div>
+      <div class="doc-info">
+        <div class="doc-name" title="${doc.name}">${doc.name}</div>
+        <div class="doc-meta">${doc.pages} pages · ${doc.chunk_count} chunks</div>
+      </div>
+      <button class="doc-del" data-id="${doc.id}">✕</button>`;
+    list.appendChild(el);
+  }
+}
+
+document.getElementById('doc-list').addEventListener('click', e => {
+  const del = e.target.closest('.doc-del');
+  if (del) { e.stopPropagation(); removeDoc(del.dataset.id); return; }
+  const item = e.target.closest('.doc-item');
+  if (!item) return;
+  const id = item.dataset.id;
+  selected.has(id) ? selected.delete(id) : selected.add(id);
+  renderDocs();
+});
+
+async function removeDoc(id) {
+  await fetch(`/documents/${id}`, { method: 'DELETE' });
+  delete docs[id]; selected.delete(id); renderDocs();
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+async function uploadFiles(files) {
+  const btn = document.getElementById('upload-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⟳</span> Processing…';
+
+  for (const file of files) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: fd });
+      if (!res.ok) { toast((await res.json()).detail || 'Upload failed'); continue; }
+      const doc = await res.json();
+      docs[doc.id] = doc; selected.add(doc.id);
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+  renderDocs();
+  btn.disabled = false; btn.textContent = '+ Add PDFs';
+}
+
+document.getElementById('upload-btn').addEventListener('click', () =>
+  document.getElementById('file-input').click());
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files.length) uploadFiles([...e.target.files]);
+  e.target.value = '';
+});
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('click',     () => document.getElementById('file-input').click());
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop',      e => {
+  e.preventDefault(); dz.classList.remove('over');
+  const files = [...e.dataTransfer.files].filter(f => f.name.endsWith('.pdf'));
+  if (files.length) uploadFiles(files);
+});
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function addMsg(role, text = '') {
+  document.getElementById('empty')?.remove();
+  const el = document.createElement('div');
+  el.className = `msg ${role}`;
+  el.innerHTML = role === 'user'
+    ? `<div class="msg-label">You</div><div class="bubble">${escHtml(text)}</div>`
+    : `<div class="msg-label">Assistant</div><div class="bubble"></div><div class="sources"></div>`;
+  document.getElementById('messages').appendChild(el);
+  scrollEnd();
+  return el;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function scrollEnd() {
+  const m = document.getElementById('messages'); m.scrollTop = m.scrollHeight;
+}
+
+async function send() {
+  if (streaming) return;
+  const ta  = document.getElementById('question');
+  const q   = ta.value.trim();
+  if (!q) return;
+  if (!Object.keys(docs).length) { toast('Upload a PDF first.'); return; }
+
+  const model = document.getElementById('model-select').value;
+  if (!model) { toast('No Ollama model selected. Is Ollama running?'); return; }
+
+  ta.value = ''; ta.style.height = '';
+  streaming = true;
+  document.getElementById('send-btn').disabled = true;
+
+  addMsg('user', q);
+  const aiEl  = addMsg('ai');
+  const bubble = aiEl.querySelector('.bubble');
+  const srcBox = aiEl.querySelector('.sources');
+
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+  bubble.appendChild(cursor);
+
+  try {
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: q,
+        model,
+        doc_ids: selected.size ? [...selected] : null,
+      }),
+    });
+
+    if (!res.ok) {
+      bubble.textContent = '⚠ ' + ((await res.json()).detail || 'Request failed');
+      return;
+    }
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let   buf = '', answer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n'); buf = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (ev.type === 'sources') {
+          renderSources(srcBox, ev.sources);
+        } else if (ev.type === 'text') {
+          answer += ev.text;
+          bubble.textContent = answer;
+          bubble.appendChild(cursor);
+          scrollEnd();
+        }
+      }
+    }
+  } catch (e) {
+    bubble.textContent = '⚠ ' + e.message;
+  } finally {
+    cursor.remove();
+    streaming = false;
+    document.getElementById('send-btn').disabled = false;
+    scrollEnd();
+  }
+}
+
+function renderSources(box, sources) {
+  box.innerHTML = '';
+  const seen = new Set();
+  for (const s of sources) {
+    const key = `${s.doc_name}:${s.page}`;
+    if (seen.has(key)) continue; seen.add(key);
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    const name = s.doc_name.length > 28 ? s.doc_name.slice(0, 26) + '…' : s.doc_name;
+    chip.textContent = `${name} · p.${s.page}`;
+    box.appendChild(chip);
+  }
+}
+
+// Auto-resize textarea + Enter to send
+const ta = document.getElementById('question');
+ta.addEventListener('input', () => { ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; });
+ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+document.getElementById('send-btn').addEventListener('click', send);
+
+// Load existing docs on open
+fetch('/documents').then(r => r.json()).then(list => {
+  for (const d of list) { docs[d.id] = d; selected.add(d.id); }
+  renderDocs();
+});
+</script>
+</body>
+</html>
