@@ -2,8 +2,6 @@
 
 Ask questions about your PDFs using a local AI. **No API key. No cloud. Free forever.**
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Ollama](https://img.shields.io/badge/Ollama-local-green) ![License](https://img.shields.io/badge/license-MIT-blue)
-
 ## What it does
 
 - Upload PDFs via drag & drop
